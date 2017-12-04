@@ -9,5 +9,6 @@ from . import core
 from . import data
 from . import manipulate
 from . import plot
+from . import ml
 
-__all__ = ["core", "data", "manipulate", "math", "sys", "plot"]
+__all__ = ["core", "data", "manipulate", "math", "sys", "plot", "ml"]
