@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 
 def split_indices_kfold(k, ixs):
     if isinstance(ixs, int):
@@ -15,3 +16,11 @@ def split_indices_kfold(k, ixs):
 
     return [[ixs[np.concatenate((np.arange(0,ii*m), np.arange((ii+1)*m, N)))],
            ixs[np.arange(ii*m,(ii+1)*m)]] for ii in range(k)]
+
+
+def istensor(x):
+    """
+    (torch) Helper function to evaluate if x is any form of tensor
+    """
+    return isinstance(x, torch.tensor._TensorBase)
+

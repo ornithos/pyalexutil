@@ -10,5 +10,8 @@ from . import data
 from . import manipulate
 from . import plot
 from . import ml
+from . import txt
+from . import stats
 
-__all__ = ["core", "data", "manipulate", "math", "sys", "plot", "ml"]
+__all__ = ["core", "data", "manipulate", "math", "sys", "plot", "ml", "txt", "stats"]
+
