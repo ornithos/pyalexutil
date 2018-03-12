@@ -7,6 +7,7 @@ def vec(x):
     """
     return x.reshape(-1,1)
 
+
 def one_hot(x, max_value=None):
     """
     :param x: x (array, length n)
@@ -41,3 +42,20 @@ def one_hot(x, max_value=None):
 
     out[np.arange(n), x.T] = 1
     return out
+
+def make_array_from_list(x):
+    """
+    Turn a list of numpy arrays (1D list of 1D numpy arrays) into 2D numpy array.
+    The advantage of this function is that the numpy arrays do not need to be of
+    the same length: this routine pads the arrays of shorter length with NaNs.
+    :param x: a list of 1D numpy arrays
+    :return: a 2D numpy array
+    """
+    assert isinstance(x, list), "x must be a list of numpy arrays (not a list!)"
+    assert isinstance(x[0], np.ndarray), "x must be a list of numpy arrays"
+    if x[0].ndim > 1:
+        raise NotImplementedError("Only implemented for 1D arrays at present")
+
+    max_len = max([z.size for z in x]) # feels a little inefficient, but naively, reduce doesn't help
+    x = [np.pad(y, (0, max_len - y.size), 'constant', constant_values=np.nan) for y in x]
+    return np.vstack(x)

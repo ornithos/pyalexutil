@@ -1,5 +1,6 @@
 import numpy as np
 import builtins
+from collections import Iterable
 
 def crange(start, stop, modulo):
     """
@@ -61,12 +62,15 @@ def type(x, recurse_depth=np.Inf, prefix=""):
              prefix='   --- [0]: ' if len(prefix) == 0 else (' '*10) + prefix)
     if isinstance(x, list) or isinstance(x, tuple):
         print_str = prefix+"{0:s} [ length {1:d} ]".format(builtins.type(x).__name__, len(x))
-        if recurse_depth > 0:
-            print(print_str)
-            do_recurse(x[0])
+        if len(x) > 0:
+            if recurse_depth > 0:
+                print(print_str)
+                do_recurse(x[0])
+            else:
+                first_el = builtins.type(x[0]).__name__
+                print_str = print_str[:-2] + ", first element type {0:s} ]".format(first_el)
+                print(print_str)
         else:
-            first_el = builtins.type(x[0]).__name__
-            print_str = print_str[:-2] + ", first element type {0:s} ]".format(first_el)
             print(print_str)
     elif isinstance(x, np.ndarray):
         shape = str(x.shape)
@@ -92,3 +96,19 @@ class dictNamespace(object):
     """
     def __init__(self, adict):
         self.__dict__.update(adict)
+
+
+def ensure_iterable(x, allow_string=True):
+    """
+    ensure_iterable tests if an argument is iterable, and if it is not, makes it a list of one
+    element. This is useful when users pass a single item in to a function that supports iteration.
+
+    Strings are technically iterable, but for many applications, we pretend here that they are not
+    by setting string=False
+    """
+    if not allow_string and isinstance(x, str):
+        return [x]
+    if not isinstance(x, Iterable) and not hasattr(x, '__getitem__'):
+        x = [x]
+    return x
+

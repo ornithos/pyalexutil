@@ -1,4 +1,5 @@
 import numpy as np
+from scipy import stats
 import sys
 
 def max(x):
@@ -26,3 +27,19 @@ def log1pexp(x):
     std = np.log(1 + ex)
     out = std_part*std + exp_part*ex + linear_part*x
     return out
+
+def nan_trim_mean(x, proportiontocut=0.1, axis=0, **kwargs):
+    """
+    Applies scipy's trim_mean function on a given axis of numpy array
+    """
+    assert isinstance(x, np.ndarray), "x is not numpy array"
+
+    def _nan_trim_mean(x, proportiontocut, **kwargs):
+        mask = np.isnan(x)
+        x = x[~mask]
+        return stats.trim_mean(x, proportiontocut, **kwargs)
+
+    # This feels kind of inefficient, but not sure how easy it is to do better
+    r = np.apply_along_axis(_nan_trim_mean, axis=axis, arr=x, proportiontocut=proportiontocut, **kwargs)
+
+    return r
