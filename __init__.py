@@ -12,6 +12,7 @@ from . import plot
 from . import ml
 from . import txt
 from . import stats
+from . import stan
 
-__all__ = ["core", "data", "manipulate", "math", "sys", "plot", "ml", "txt", "stats"]
+__all__ = ["core", "data", "manipulate", "math", "sys", "plot", "ml", "txt", "stats", "stan"]
 
