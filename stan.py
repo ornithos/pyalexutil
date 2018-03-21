@@ -13,7 +13,6 @@ import json
 import hashlib
 import copy
 from multiprocessing.dummy import Pool
-from pyalexutil.txt import print_banner
 
 def dump_stan_data(dict_data, fname=None, precision=8):
     expcd = "{:." + "{:d}".format(precision) + "e}"
@@ -76,7 +75,7 @@ class CmdStanInterface(object):
 
     def __init__(self, cmd_stan_directory):
         assert os.path.isdir(cmd_stan_directory), "invalid directory specified"
-        dir_contents = os.listdir('/Users/alexbird/utils/cmdstan-2.17.1')
+        dir_contents = os.listdir(cmd_stan_directory)
         assert not set(['stan', 'make', 'makefile', 'src', 'runCmdStanTests.py']) - set(dir_contents), \
             "This does not look like the root directory of CmdStan."
         assert os.name != 'nt', "This class has not been built for Windows."
@@ -102,25 +101,30 @@ class CmdStanInterface(object):
             op = subprocess.call([filename,'sample', 'help'], stdout=devnull)
         assert op == 0, "specified file does not appear to be Stan Object. Try recompiling."
         self._model_exec = os.path.abspath(filename)
+        self._stanfile = None
 
     def compile(self, stanfile, verbose=True):
         assert os.path.splitext(stanfile)[1] == ".stan", "stan files must end in extension .stan"
         assert os.path.isfile(stanfile), "file not found"
-        stanfile = os.path.abspath(stanfile)
+        _stanfile = os.path.abspath(stanfile)
+        stanfile = _stanfile[:-5]
         if verbose:
-            print_banner("COMPILING STAN OBJECT")
-            subprocess.call(''.join(['make ', stanfile]), cwd=self.cmdstandir, shell=True)
+            print("COMPILING STAN OBJECT")
+            print("#"*20)
+            op = subprocess.check_output(''.join(['make ', stanfile]), cwd=self.cmdstandir, shell=True)
+            print(op)
         else:
             with open(os.devnull, 'w') as devnull:
                 subprocess.call(''.join(['make ', stanfile]), cwd=self.cmdstandir, stdout=devnull, shell=True)
-        self._model_exec = stanfile[:-5]
+        self._model_exec = stanfile
+        self._stanfile = _stanfile
 
     def sample(self, data_dict, num_chains, num_samples, num_warmup, save_warmup, adapt_engaged,
                algorithm="NUTS", metric='diag_e', inv_mass_matrix=None, stepsize=1,
                init="random", diagnostic=None, refresh=100, size_pool=2):
 
         if True: # code folding
-            assert isinstance(data_dict, dict)
+            assert isinstance(data_dict, dict) or callable(data_dict)
             assert isinstance(num_chains, int) and num_chains > 0
             assert isinstance(num_samples, int) and num_samples > 0
             assert isinstance(num_warmup, int) and num_warmup > 0
@@ -132,8 +136,7 @@ class CmdStanInterface(object):
                 "inv_mass_matrix must be None or numpy array."
             assert np.isscalar(stepsize), "stepsize should be scalar numeric"
             assert (isinstance(init, str) and init.lower() == "random") or \
-                isinstance(init, dict), "init should be 'random' or dict of params (note only single" + \
-                " dict is currently supported, i.e. same initialisation)."
+                isinstance(init, (dict, list)), "init should be 'random' or dict of params, or list thereof."
             assert diagnostic is None or os.path.isdir(os.path.dirname(diagnostic)), "diagnostic file " + \
                 "directory does not exist."
             assert isinstance(refresh, int) and refresh > 0
@@ -141,10 +144,20 @@ class CmdStanInterface(object):
         # Save 3 different temporary files: data_dict, init and inv_mass_matrix
         dir_tmp = tempfile.gettempdir()
 
-        data_md5 = ordered_md5_hash(data_dict)[-16:]
-        data_name = os.path.join(dir_tmp, 'cmdstandata_{:s}'.format(data_md5))
-        if not os.path.isfile(data_name):
-            dump_stan_data(data_dict, fname=data_name)
+        if isinstance(data_dict, dict):
+            data_md5 = ordered_md5_hash(data_dict)[-16:]
+            data_name = os.path.join(dir_tmp, 'cmdstandata_{:s}'.format(data_md5))
+            if not os.path.isfile(data_name):
+                dump_stan_data(data_dict, fname=data_name)
+            data_names = [data_name]*num_chains
+        else:
+            data_names = []
+            for j in range(num_chains):
+                d_dict = data_dict(j)
+                data_md5 = ordered_md5_hash(d_dict)[-16:]
+                data_name = os.path.join(dir_tmp, 'cmdstandata_{:s}'.format(data_md5))
+                dump_stan_data(d_dict, fname=data_name)
+                data_names.append(data_name)
 
         if inv_mass_matrix is not None:
             mass_md5 = hashlib.md5(inv_mass_matrix).hexdigest()[-16:]
@@ -155,10 +168,19 @@ class CmdStanInterface(object):
             mass_name is None
 
         if isinstance(init, dict):
-            init_md5 = hashlib.md5(init).hexdigest()[-16:]
-            init_name = os.path.join(dir_tmp, 'cmdinitmass_{:s}'.format(init_md5))
+            init_md5 = ordered_md5_hash(init)[-16:]
+            init_name = os.path.join(dir_tmp, 'cmdstaninit_{:s}'.format(init_md5))
             if not os.path.isfile(init_name):
                 dump_stan_data(init, fname=init_name)
+        if isinstance(init, list):
+            init_names = []
+            for x in init:
+                assert isinstance(x, dict), "init list elements must be dicts"
+                init_md5 = ordered_md5_hash(x)[-16:]
+                init_name = os.path.join(dir_tmp, 'cmdstaninit_{:s}'.format(init_md5))
+                if not os.path.isfile(init_name):
+                    dump_stan_data(x, fname=init_name)
+                init_names.append(init_name)
         else:
             init_name = None
 
@@ -191,38 +213,55 @@ class CmdStanInterface(object):
             cmds += ["stepsize={:.8f}".format(stepsize),
                      "id={:d}".format(j+1),
                      "data",
-                     "file={:s}".format(data_name)]
+                     "file={:s}".format(data_names[j])]
             if isinstance(init, dict):
                 cmds.append("init={:s}".format(init_name))
+            elif callable(init):
+                cmds.append("init={:s}".format(init_name(j)))
+            elif isinstance(init, list):
+                cmds.append("init={:s}".format(init_names[j]))
+            else:
+                raise Exception('Unexpected init type: {:s}'.format(str(type(init))))
             cmds +=["output",
                      "file={:s}".format(output_files[j])]
             if diagnostic is not None:
-                cmds.appen("diagnostic_file={:s}".format(diagnostic))
+                cmds.append("diagnostic_file={:s}".format(diagnostic))
             cmds.append("refresh={:d}".format(refresh))
             return cmds
 
         # Run the sampler (in multithread pool - with a little help from https://stackoverflow.com/a/14533902)
         pool = Pool(size_pool)
         cmds = [get_cmd_str_for_thread(x) for x in range(num_chains)]
+        print(' '.join(cmds[0]))
+        print(' '.join(cmds[1]))
+
+        failed = [0]*num_chains
         for i, returncode in enumerate(pool.imap(subprocess.call, cmds)):
             if returncode != 0:
                 print("chain %d failed: %d" % (i, returncode))
+                failed[i] = 1
 
+        if sum(failed) == 0:
+            # Collect results from various files (if succeeded!)
+            out = [pd.read_csv(f, comment='#') for f in output_files]
+            out = pd.concat(out)
 
-        # Collect results from various files
-        out = [pd.read_csv(f, comment='#') for f in output_files]
-        out = pd.concat(out)
-
-        # Call stansummary()
-        with tempfile.NamedTemporaryFile(mode='a') as f:
-            subprocess.call(['grep', 'lp__', output_files[0]], stdout=f)
-            for i in range(num_chains):
-                subprocess.call(['sed', '/^[#l]/d', output_files[i]], stdout=f)
-            summ = subprocess.check_output([os.path.join(self.cmdstandir, 'bin', 'stansummary'), f.name])
+            # Call stansummary()
+            with tempfile.NamedTemporaryFile(mode='a') as f:
+                subprocess.call(['grep', 'lp__', output_files[0]], stdout=f)
+                for i in range(num_chains):
+                    subprocess.call(['sed', '/^[#l]/d', output_files[i]], stdout=f)
+                summ = subprocess.check_output([os.path.join(self.cmdstandir, 'bin', 'stansummary'), f.name])
 
         # Delete output files
         for i in range(num_chains):
             op_file_id[i].close()
             os.remove(output_files[i])
+        if callable(data_dict):
+            for x in data_names:
+                os.remove(x)
+
+        if sum(failed) > 0:
+            raise ChildProcessError("{:d} chains failed (see stdout)".format(sum(failed)))
 
         return out, summ.decode('utf-8')

@@ -1,4 +1,5 @@
 import numpy as np
+import matplotlib.pyplot as plt
 
 def subplot_gridsize(num):
     """ stolen from Matt Johnson - much better than my version
@@ -49,3 +50,15 @@ def colortint(x, amt):
         xtint[non1] = (2-amt)*x[non1];
     return xtint
 
+
+def abline(slope, intercept, color='red', ax=None):
+    """Plot a line from slope and intercept - improved from https://stackoverflow.com/a/43811762"""
+    if ax is None:
+        ax = plt.gca()
+    xrng = ax.get_xlim()
+    yrng = ax.get_ylim()
+    yrng2 = ((yrng[1]-intercept)/slope, (yrng[0]-intercept)/slope)
+    x_vals = [max(xrng[0], min(yrng2)), min(max(yrng2), xrng[1])]
+    x_vals = np.array(x_vals)
+    y_vals = intercept + slope * x_vals
+    plt.plot(x_vals, y_vals, '--', color=color)
