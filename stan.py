@@ -121,13 +121,13 @@ class CmdStanInterface(object):
 
     def sample(self, data_dict, num_chains, num_samples, num_warmup, save_warmup, adapt_engaged,
                algorithm="NUTS", metric='diag_e', inv_mass_matrix=None, stepsize=1,
-               init="random", diagnostic=None, refresh=100, size_pool=2):
+               init="random", diagnostic=None, refresh=100, size_pool=2, thin=1):
 
         if True: # code folding
             assert isinstance(data_dict, dict) or callable(data_dict)
             assert isinstance(num_chains, int) and num_chains > 0
-            assert isinstance(num_samples, int) and num_samples > 0
-            assert isinstance(num_warmup, int) and num_warmup > 0
+            assert isinstance(num_samples, (int, list))
+            assert isinstance(num_warmup, (int, list))
             assert isinstance(save_warmup, bool)
             assert isinstance(adapt_engaged, bool)
             assert algorithm.lower() in ['hmc', 'nuts'], "Algorithm should be 'HMC' or 'NUTS'"
@@ -140,6 +140,7 @@ class CmdStanInterface(object):
             assert diagnostic is None or os.path.isdir(os.path.dirname(diagnostic)), "diagnostic file " + \
                 "directory does not exist."
             assert isinstance(refresh, int) and refresh > 0
+            assert isinstance(thin, int) and thin > 0
 
         # Save 3 different temporary files: data_dict, init and inv_mass_matrix
         dir_tmp = tempfile.gettempdir()
@@ -184,6 +185,16 @@ class CmdStanInterface(object):
         else:
             init_name = None
 
+        if isinstance(num_samples, (int, float)):
+            num_samples = [num_samples]*num_chains
+        else:
+            assert len(num_samples) == num_chains, "num samples should be len 1 or num chain"
+
+        if  isinstance(num_warmup, (int, float)):
+            num_warmup = [num_warmup]*num_chains
+        else:
+            assert len(num_warmup) == num_chains, "num warmup should be len 1 or num chain"
+
         # Deal with other things: initialisation and output file
         # if init.lower() == "random":
         #     init = "2"  # this is much worse than what rstan/pystan do :S
@@ -200,9 +211,10 @@ class CmdStanInterface(object):
         # Generate command string for running the sampler in CmdStan
         def get_cmd_str_for_thread(j):
             cmds = [self._model_exec, "sample",
-                    "num_samples={:d}".format(num_samples),
-                    "num_warmup={:d}".format(num_warmup),
+                    "num_samples={:d}".format(num_samples[j]),
+                    "num_warmup={:d}".format(num_warmup[j]),
                     "save_warmup={:d}".format(save_warmup),
+                    "thin={:d}".format(thin),
                     "adapt",
                     "engaged={:d}".format(adapt_engaged),
                     "algorithm=hmc",
@@ -259,7 +271,8 @@ class CmdStanInterface(object):
             os.remove(output_files[i])
         if callable(data_dict):
             for x in data_names:
-                os.remove(x)
+                if os.path.isfile(x):
+                    os.remove(x)
 
         if sum(failed) > 0:
             raise ChildProcessError("{:d} chains failed (see stdout)".format(sum(failed)))
