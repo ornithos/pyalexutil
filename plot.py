@@ -8,6 +8,7 @@ import matplotlib.colors as mplcol
 import matplotlib.cm as cm
 import seaborn as sns
 import colorsys
+import operator
 
 
 def get_seq_cmap_by_snscolor(cix):
@@ -104,22 +105,131 @@ def abline(slope, intercept, color='red', ax=None):
     plt.plot(x_vals, y_vals, '--', color=color)
 
 
-class non_uniform_subplot(object):
-    def __init__(self, ratio_y, ratio_x):
-        self.gs = gridspec.GridSpec(len(ratio_y), len(ratio_x), width_ratios=ratio_x, height_ratios=ratio_y)
-        self.ny = len(ratio_y)
-        self.nx = len(ratio_x)
+def ax_lim_one_side(ax, xy, start=None, end=None, type='constant'):
+    if xy == 'x':
+        lims = list(ax.get_xlim())
+    else:
+        lims = list(ax.get_ylim())
+
+    if type in 'multiply*':
+        f = operator.mul
+    elif type == 'add+':
+        f = operator.add
+    elif type == 'constant':
+        f = lambda x, y: y
+    else:
+        warnings.warn("Unexpected type (expecting 'constant', 'add', 'multiply'): interpreting as constant")
+        f = lambda x, y: y
+
+    if start is not None:
+        lims[0] = f(lims[0], start)
+    if end is not None:
+        lims[1] = f(lims[1], end)
+
+    if xy == 'x':
+        ax.set_xlim(lims)
+    else:
+        ax.set_ylim(lims)
+
+
+# convenience wrappers for clean code
+def x_lim_one_side(ax, start=None, end=None, type='constant'):
+    ax_lim_one_side(ax, 'x', start=start, end=end, type=type)
+
+
+def y_lim_one_side(ax, start=None, end=None, type='constant'):
+    ax_lim_one_side(ax, 'y', start=start, end=end, type=type)
+
+
+class NonUniformSubplot(object):
+    def __init__(self, ratio_y, ratio_x, f=None):
+        if f is None:
+            f = plt.figure()
+        assert isinstance(f, mpl.figure.Figure), "supplied f is not a figure."
+        self._gs = gridspec.GridSpec(len(ratio_y), len(ratio_x), width_ratios=ratio_x, height_ratios=ratio_y, figure=f)
+        self._ny = len(ratio_y)
+        self._nx = len(ratio_x)
+        self._subplot_axes = [None]*len(ratio_y)*len(ratio_x)
+        self.gs = self._gs
+        self.nx = self._nx
+        self.ny = self._ny
+        self.restriction = None
         self.ratio_y = ratio_y
         self.ratio_x = ratio_x
+        self.figure = f
 
     def subplot(self, i, j=None):
-        assert i > 0, 'subplot syntax is 1-based'
+        assert i != 0, 'subplot syntax is 1-based'
         if j is not None:
-            assert j > 0, 'subplot syntax is 1-based'
+            assert j != 0, 'subplot syntax is 1-based'
+            i = i if i > 0 else self.ny + i + 1
+            j = j if j > 0 else self.nx + i + 1
             i = (i - 1) * self.nx + j
+        else:
+            i = i if i > 0 else self.ny * self.nx + i + 1
 
-        ax = plt.subplot(self.gs[i - 1])
+        # get subplot axes, either saved from previous correction, or generated.
+        # also error check bounds
+        try:
+            ax = self.subplot_axes(i-1)
+
+            if ax is None:
+                ax = self.figure.add_subplot(self.gs[i - 1])
+                self._subplot_axes[self.get_absolute_ix(i-1)] = ax
+        except IndexError as e:
+            gt_all_subplot = i-1 >= self._gs._nrows * self._gs._ncols
+            errstr = 'User specified index greater than exists in {:s}subplot ({:s}), i={:d}'.format(
+                '(restricted) ' if self.is_restrict() and not gt_all_subplot else '',
+                'x'.join([str(self.ny), str(self.nx)]), i)
+            if gt_all_subplot:
+                raise RuntimeError(errstr)
+            else:
+                raise RuntimeError(errstr + '\nTry unrestricting the subplot range (.unrestrict_subplot_range())')
+
         return ax
+
+    def restrict_subplot_range(self, i_y=None, i_x=None):
+        """
+        make subplot method refer only to restricted part of grid: useful for pretending that
+        a large grid is really a grid of subgrids, and potentially useful for client functions.
+        Note at present that this is 0-based unlike the subplot command
+        """
+        assert i_y is None or isinstance(i_y, list), "i_y must be type list"
+        assert i_x is None or isinstance(i_x, list), "i_x must be type list"
+        i_y = list(range(self.ny)) if i_y is None else i_y
+        i_x = list(range(self.nx)) if i_x is None else i_x
+        ixs = np.concatenate([np.array(i_x) + y*self.nx for y in i_y])
+        self.gs = [self._gs[i] for i in ixs]
+        self.ny = len(i_y)
+        self.nx = len(i_x)
+        if self.ny == self._ny and self.nx == self._nx:
+            self.restriction = None
+        else:
+            self.restriction = ixs
+
+    def unrestrict_subplot_range(self):
+        self.gs = self._gs
+        self.ny = self._ny
+        self.nx = self._nx
+        self.restriction = None
+
+    def is_restrict(self):
+        return self.restriction is not None
+
+    def get_absolute_ix(self, ix):
+        if self.restriction is None:
+            return ix
+        else:
+            return self.restriction[ix]
+
+    def set_size_inches(self, w, h):
+        self.figure.set_size_inches(w, h)
+
+    def tight_layout(self, *args, **kwargs):
+        self._gs.tight_layout(*args, **kwargs)
+
+    def subplot_axes(self, ix):
+        return self._subplot_axes[self.get_absolute_ix(ix)]
 
 
 def create_grid_line_plot(ax, y, x=None, max_x=None, title=None, ylab=None, xlab=None,
@@ -165,6 +275,7 @@ def kdeplot2d(x, y, ax, bw="scott", gridsize=100, cut=3, n_levels=10, col_ix=Non
         if fill_lowest:
             fill_lowest=False
             warnings.warn("sgl_col overriding fill_lowest=True --> False")
+        alpha = 1 if 'alpha' not in kwargs else kwargs['alpha']
         alpha /= 4
 
 
