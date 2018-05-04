@@ -41,7 +41,7 @@ def rgb_reduce_hls(x, h=None, s=None, l=None):
 
 
 def subplot_gridsize(num):
-    """ stolen from Matt Johnson - much better than my version
+    """ stolen from Matt Johnson - much cleaner than my version
     https://github.com/mattjj/pymattutil/plot.py"""
     return sorted(min([(x,int(np.ceil(num/x))) for x in range(1,int(np.floor(np.sqrt(num)))+1)],key=sum))
 
@@ -50,6 +50,9 @@ def vary_color(n):
     # Not suggesting this is a good colour palette
     # but it is merely consistent with my previous
     # MATLAB version
+    warnings.warn("This function will be deprecated in a future release - use matplotlib colormaps instead",
+                  DeprecationWarning)
+
     cols           = np.array(
                      [[77,  77,  77 ],
                       [93,  165, 218],
@@ -71,6 +74,8 @@ def colortint(x, amt):
     # xtint = colortint(x, amt)
     # Creates a lighter tint of color x (where x is a n * 3 matrix of rgb
     # values).
+    warnings.warn("This function will be deprecated in a future release - use rgb_reduce_hls instead",
+                  DeprecationWarning)
     assert isinstance(x, np.ndarray), "x must be a numpy array"
     if x.ndim > 1:
         assert x.shape[1]==3, "x must be an n*3 numpy array"
@@ -140,6 +145,30 @@ def x_lim_one_side(ax, start=None, end=None, type='constant'):
 def y_lim_one_side(ax, start=None, end=None, type='constant'):
     ax_lim_one_side(ax, 'y', start=start, end=end, type=type)
 
+
+def gaussian_2D_level_curve(mu, sigma, alpha=2, ncoods=100, plot=True):
+
+    # (Ported from my matlab utils)
+    assert isinstance(mu, np.ndarray) and isinstance(sigma, np.ndarray), "mu/sigma must be numpy arrays."
+    assert mu.shape == (2, ), 'mu must be vector in R^2'
+    assert sigma.shape == (2, 2), 'sigma must be 2x2 array'
+
+    U, S, V = np.linalg.svd(sigma)
+
+    sd = np.sqrt(S)
+    coods = np.linspace(0, 2 * np.pi, ncoods)
+    coods = np.vstack((sd[0] * np.cos(coods), sd[1] * np.sin(coods))) * alpha
+
+    # project onto basis of ellipse
+    coods = (V @ coods).T
+
+    # add mean
+    coods += mu
+
+    if plot:
+        plt.plot(*coods.T)
+
+    return coods
 
 class NonUniformSubplot(object):
     def __init__(self, ratio_y, ratio_x, f=None):
@@ -265,19 +294,21 @@ def create_grid_line_plot(ax, y, x=None, max_x=None, title=None, ylab=None, xlab
 
 
 def kdeplot2d(x, y, ax, bw="scott", gridsize=100, cut=3, n_levels=10, col_ix=None,
-            fill_lowest=False, sgl_col=False, cbar=False, x_label=None, y_label=None,
+            fill_lowest=False, sgl_col=False, credint=0, cbar=False, x_label=None, y_label=None,
             xclip=None, **kwargs):
     # butchered from Seaborn's distributions._bivariate_kdeplot
 
     clip = [(np.min(x), np.max(x)), (-np.inf, np.inf)]
+    alpha = 1 if 'alpha' not in kwargs else kwargs['alpha']
     # override some settings if in single color mode.
     if sgl_col:
         if fill_lowest:
             fill_lowest=False
             warnings.warn("sgl_col overriding fill_lowest=True --> False")
-        alpha = 1 if 'alpha' not in kwargs else kwargs['alpha']
         alpha /= 4
-
+    else:
+        if credint > 0:
+            alpha /= 4
 
     if xclip is not None:
         xclip = [xclip] if isinstance(xclip, (int, float)) else xclip
@@ -288,7 +319,24 @@ def kdeplot2d(x, y, ax, bw="scott", gridsize=100, cut=3, n_levels=10, col_ix=Non
 
     xx, yy, z = sns.distributions._statsmodels_bivariate_kde(x, y, bw, gridsize, cut, clip)
 
-    # Plot the contours
+    #  ---------  credible interval ---------------------------------------
+    if credint > 0:
+        zsort = np.flipud(np.argsort(z, axis=0))
+        zout = np.zeros_like(z)
+        fillval = np.max(z)
+        for i in range(zsort.shape[1]):
+            column = zsort[:,i]
+            vals = z[column, i]
+            cumvals = np.cumsum(vals)
+            cumvals /= cumvals[-1]
+            is_1 = (cumvals <= credint)
+            zout[zsort[is_1,i], i] = fillval #np.sum(vals)/np.sum(is_1)
+        z = zout
+        n_levels = 2
+        # z[0, :] = 0
+        # z[-1, :] = 0
+
+    # -------- Plot the contours -----------------------------------
     if 'cmap' not in kwargs:
         col_ix = 0 if col_ix is None else col_ix
         kwargs['cmap'] = get_seq_cmap_by_snscolor(col_ix)
@@ -297,19 +345,30 @@ def kdeplot2d(x, y, ax, bw="scott", gridsize=100, cut=3, n_levels=10, col_ix=Non
 
     cset = ax.contourf(xx, yy, z, n_levels, **kwargs)
 
+    # -------- switch up contour area colours ---------------------
     if sgl_col:
-        alpha = 1 if 'alpha' not in kwargs else kwargs['alpha']
         for i, csetcoll in enumerate(cset.collections):
             if i > 18:
+                # (AB): confused why this is here
                 csetcoll.set_alpha(0)
+
             else:
                 # csetcoll.set_edgecolor(None)
                 csetcoll.set_facecolor(kwargs['cmap'](256))
                 csetcoll.set_linewidth(1e-2)
                 csetcoll.set_alpha(alpha)
 
-    if not fill_lowest:
+    if sgl_col < 2 and not fill_lowest:
         cset.collections[0].set_alpha(0)
+
+    if sgl_col == 0 and credint > 0:
+        cset_collections[1].set_alpha(alpha)
+
+    if sgl_col == 2 and not fill_lowest:
+        cset.collections[0].set_linewidth(1)
+        cset.collections[0].set_edgecolor(kwargs['cmap'](256))
+        cset.collections[0].set_alpha(0.7)
+        cset.collections[0].set_facecolor([1,1,1,0])
 
     kwargs["n_levels"] = n_levels
 
@@ -321,5 +380,56 @@ def kdeplot2d(x, y, ax, bw="scott", gridsize=100, cut=3, n_levels=10, col_ix=Non
         ax.set_xlabel(x_label)
     if y_label is not None:
         ax.set_ylabel(y_label)
+
+    return ax
+
+
+def nanboxplot(x, **kwargs):
+    x = np.asarray(x)
+    if x.ndim == 1:
+        x = x[:,None]   # cannot use np.atleast_2d since adds adds dim at front not end
+    no_nan_cols = [x[~np.isnan(x[:,i]), i] for i in range(x.shape[1])]
+    if 'ax' in kwargs:
+        ax = kwargs.pop('ax')
+        return ax.boxplot(no_nan_cols, **kwargs)
+    else:
+        return plt.boxplot(no_nan_cols, **kwargs)
+
+
+def paired_boxplot(x, **kwargs):
+    assert isinstance(x, list), "x must be a list"
+    assert all(isinstance(xi, list) for xi in x), "x must be a list of lists"
+    assert len(set(len(xi) for xi in x)) == 1, "all lists in x must be same length."
+
+    def color_box(bp, color):
+        # https://stackoverflow.com/a/35778857
+        elements = ['boxes', 'caps', 'whiskers']
+        for elem in elements:
+            [plt.setp(bp[elem][idx], color=color) for idx in range(len(bp[elem]))]
+        plt.setp(bp['medians'][0], color=rgb_reduce_hls(color[:3], s=0.7, l=0.9))
+        return
+
+    n_groups = len(x)
+    n_x_axis = len(x[0])
+    N = n_x_axis * (n_groups + 1)
+
+    width = 0.6 if 'width' not in kwargs else kwargs.pop('width')
+    _flierprops = None if 'flierprops' not in kwargs else kwargs.pop('flierprops')
+    colormap = cm.tab10 if 'colormap' not in kwargs else kwargs.pop('colormap')
+
+    col_ixs = [0] if n_groups == 1 else ([1,0] + list(range(2, n_groups)))[:n_groups]
+    cols = [colormap(i) for i in  col_ixs]
+
+    for n in range(n_groups):
+        flierprops = dict(markeredgecolor=cols[n]) if _flierprops is None else _flierprops
+        for i, pos in enumerate(range(n, N, n_groups+1)):
+            bp = nanboxplot(x[n][i], positions=[pos+1], widths=width, flierprops=flierprops, **kwargs)
+            color_box(bp, cols[n])
+
+    ax = plt.gca() if 'ax' not in kwargs else kwargs['ax']
+
+    ax.set_xlim(1-width, N + width-1)    # o.w. only see last plot
+    ax.set_xticklabels([str(i) for i in range(n_x_axis)])
+    ax.set_xticks([1 + (n_groups-1)/2 + (n_groups+1)*i for i in range(n_x_axis)])
 
     return ax

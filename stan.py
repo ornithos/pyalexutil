@@ -166,7 +166,7 @@ class CmdStanInterface(object):
             if not os.path.isfile(mass_name):
                 dump_stan_data(dict(inv_metric=inv_mass_matrix), fname=mass_name)
         else:
-            mass_name is None
+            mass_name = None
 
         if isinstance(init, dict):
             init_md5 = ordered_md5_hash(init)[-16:]

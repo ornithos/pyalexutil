@@ -11,6 +11,7 @@ def max(x):
     a = sys.isunix()
     return x[argmax], argmax
 
+
 def log1pexp(x):
     """
     returns log(1 + exp(x)) in a more numerically stable way.
@@ -28,6 +29,7 @@ def log1pexp(x):
     out = std_part*std + exp_part*ex + linear_part*x
     return out
 
+
 def nan_trim_mean(x, proportiontocut=0.1, axis=0, **kwargs):
     """
     Applies scipy's trim_mean function on a given axis of numpy array
@@ -43,3 +45,10 @@ def nan_trim_mean(x, proportiontocut=0.1, axis=0, **kwargs):
     r = np.apply_along_axis(_nan_trim_mean, axis=axis, arr=x, proportiontocut=proportiontocut, **kwargs)
 
     return r
+
+
+def softmax(x):
+    m = np.max(x)
+    x -= m
+    y = np.exp(x)
+    return y / sum(y)

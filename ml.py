@@ -24,3 +24,21 @@ def istensor(x):
     """
     return isinstance(x, torch.tensor._TensorBase)
 
+
+def mse(x, y, axis=None, sqrt=False):
+
+    assert axis is None or isinstance(axis, int), "axis should be an int"
+    x = np.asarray(x)
+    y = np.asarray(y)
+    assert x.shape == y.shape, "x is {:s}, y is {:s}. Not today thanks.".format(str(x.shape), str(y.shape))
+
+    sqdiff = (x - y)**2
+    if axis is None:
+        out =  np.nanmean(sqdiff)
+    else:
+        out = np.nanmean(sqdiff, axis=axis)
+
+    if sqrt:
+        return np.sqrt(out)
+    else:
+        return out

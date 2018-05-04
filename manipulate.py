@@ -43,6 +43,7 @@ def one_hot(x, max_value=None):
     out[np.arange(n), x.T] = 1
     return out
 
+
 def make_array_from_list(x):
     """
     Turn a list of numpy arrays (1D list of 1D numpy arrays) into 2D numpy array.
@@ -59,3 +60,22 @@ def make_array_from_list(x):
     max_len = max([z.size for z in x]) # feels a little inefficient, but naively, reduce doesn't help
     x = [np.pad(y, (0, max_len - y.size), 'constant', constant_values=np.nan) for y in x]
     return np.vstack(x)
+
+
+def run_length_encoding(x):
+    """
+    For 1D array x, turn [0,0,0,0,1,1,1,1,0,1,1,1] into [0, 3, 7, 8], [3, 4, 1, 4], [0, 1, 0, 1]
+    This will work with non boolean arrays but the final return element will not be meaningful.
+    :param x:
+    :return: (indices of changes, length of runs, new number (assuming boolean).
+    """
+    x = np.asarray(x)
+    assert x.ndim == 1, "run_length_encoding currently only supports 1D arrays"
+
+    changes = x[:-1] != x[1:]
+    changes_ix = np.where(changes)[0]
+    changes_from = np.concatenate(([int(not x[0])], x[changes_ix]))
+    changes_ix = np.concatenate(([0], changes_ix))
+    changes_to = np.logical_not(changes_from).astype(int)
+    lengths = np.diff(np.concatenate((changes_ix, [x.size])))
+    return changes_ix, lengths, changes_to
