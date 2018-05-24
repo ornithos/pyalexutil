@@ -42,3 +42,22 @@ def mse(x, y, axis=None, sqrt=False):
         return np.sqrt(out)
     else:
         return out
+
+
+def mse_decomp(x, y, axis=None):
+
+    assert axis is None or isinstance(axis, int), "axis should be an int"
+    x = np.asarray(x)
+    y = np.asarray(y)
+    assert x.shape == y.shape, "x is {:s}, y is {:s}. Not today thanks.".format(str(x.shape), str(y.shape))
+
+    def _mse_decomp(u):
+        mudeltasq = np.nanmean(u)**2
+        return np.array([np.nanvar(u), mudeltasq])
+
+    if axis is None:
+        out =  _mse_decomp(x.reshape(-1) - y.reshape(-1))
+    else:
+        out = np.apply_along_axis(_mse_decomp, axis=axis, arr=x-y)
+
+    return out
