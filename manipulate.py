@@ -18,22 +18,20 @@ def one_hot(x, max_value=None):
      See also one-liner from mattjj -- TODO: comparison of timing...
      one_hot = lambda x, k: np.array(x[:,None] == np.arange(k)[None, :], dtype=int)
     """
-    if not isinstance(x, np.ndarray):
-        x = np.array(x)
+    x = np.asarray(x)
     dims = x.shape
-    narg = np.argmax(dims)
+    narg = np.argmax(dims)   # accept transposed vectors
     n    = dims[narg]
     assert np.prod(dims) == np.max(dims), 'x must be one-dimensional array'
     assert x.dtype.kind == 'i', 'x must be of integer type'
 
     # Determine length of output vectors
-    amxval = np.argmax(x)
-    maxval = x[amxval]+1
+    maxval = np.max(x) + 1
     if max_value is not None:
         if max_value < maxval:
-            warnings.warn('one_hot: max_value given is less than the maxval of array', RuntimeWarning)
+            raise RuntimeError('one_hot: max_value given is less than the maxval of array')
     else:
-        max_value = maxval[0]
+        max_value = maxval
 
     out    = np.zeros((n, max_value), dtype=int)
 
@@ -41,6 +39,10 @@ def one_hot(x, max_value=None):
         x      = x.reshape(-1,1)
 
     out[np.arange(n), x.T] = 1
+
+    if narg == 1:
+        out = out.T
+
     return out
 
 
@@ -73,9 +75,27 @@ def run_length_encoding(x):
     assert x.ndim == 1, "run_length_encoding currently only supports 1D arrays"
 
     changes = x[:-1] != x[1:]
-    changes_ix = np.where(changes)[0]
+    changes_ix = np.where(changes)[0] + 1
     changes_from = np.concatenate(([int(not x[0])], x[changes_ix]))
     changes_ix = np.concatenate(([0], changes_ix))
     changes_to = np.logical_not(changes_from).astype(int)
     lengths = np.diff(np.concatenate((changes_ix, [x.size])))
     return changes_ix, lengths, changes_to
+
+
+def copy_tri(M, copy_from='upper'):
+    """
+    copy_tri: Copy upper (lower) triangle of matrix to lower (upper) triangle. Useful if populating a symmetric matrix
+    and do not wish to duplicate computation.
+    :param M: matrix which is half filled in (incl. diag)
+    :param copy_from: ['upper','lower']: whether to copy upper triangle --> lower triangle or v.v.
+    :return: the (now) symmetric matrix M.
+    """
+    if copy_from == 'upper':
+        ixs = np.tril_indices_from(M, -1)
+    else:
+        assert copy_from == 'lower', "'copy_from' must be specified as 'upper' or 'lower'"
+        ixs = np.triu_indices_from(M, -1)
+
+    M[ixs] = M.T[ixs]
+    return M

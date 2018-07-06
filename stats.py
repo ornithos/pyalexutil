@@ -1,5 +1,6 @@
 import numpy as np
 from scipy import special
+from pyalexutil.manipulate import copy_tri
 
 def t_fit(X, dof=3.5, iter=200, eps=1e-6):
     '''t_fit
@@ -57,3 +58,29 @@ def t_fit(X, dof=3.5, iter=200, eps=1e-6):
         if np.abs(obj[-1] - obj[-2]) < eps:
             break
     return cov, mean.squeeze(), obj
+
+
+def build_ar1_cov_matrix(T, rho, sigma0, sigma):
+    marginal_var = [sigma0 ** 2]
+    for ii in range(1, T):
+        marginal_var.append(marginal_var[-1] * rho ** 2 + sigma ** 2)
+
+    M = np.diag(marginal_var)
+    for ii in range(T - 1):
+        M[ii, ii + 1:] = M[ii, ii] * (rho ** np.arange(1, T - ii))
+
+    return axu.manipulate.copy_tri(M)
+
+
+def build_ar1_prec_matrix(T, rho, sigma0, sigma):
+    tmpdiag = np.concatenate((np.array([rho ** 2 / sigma ** 2 + 1 / sigma0 ** 2]),
+                              np.repeat((1 + rho ** 2) / sigma ** 2, T - 1)))
+    tmpdiag[-1] = 1 / sigma ** 2
+    M = np.diag(tmpdiag)
+    if T <= 1:
+        return M
+
+    subdiag = np.repeat(-rho / sigma ** 2, T - 1)
+    M.ravel()[1:(T - 1) * T:T + 1] = subdiag  # upper superdiagonal
+    M.ravel()[T:T * T:T + 1] = subdiag  # lower subdiagonal
+    return M
